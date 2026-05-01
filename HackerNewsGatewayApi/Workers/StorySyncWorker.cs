@@ -5,11 +5,11 @@ namespace HackerNewsGatewayApi.Workers;
 
 public sealed class StorySyncWorker(
     HackerNewsClient hackerNewsClient,
-    StoryCache cache,
+    IStoryCache cache,
     IConfiguration configuration,
     ILogger<StorySyncWorker> logger) : BackgroundService
 {
-    private static readonly SemaphoreSlim _semaphore = new(20, 20);
+    private readonly SemaphoreSlim _semaphore = new(20, 20);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {

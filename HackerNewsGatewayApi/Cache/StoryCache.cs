@@ -3,7 +3,7 @@ using HackerNewsGateway.Domain.Entities;
 
 namespace HackerNewsGatewayApi.Cache;
 
-public sealed class StoryCache
+public sealed class StoryCache : IStoryCache
 {
     private ImmutableList<Story> _stories = ImmutableList<Story>.Empty;
 

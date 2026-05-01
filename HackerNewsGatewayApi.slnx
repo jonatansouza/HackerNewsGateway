@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="HackerNewsGateway.Domain/HackerNewsGateway.Domain.csproj" />
   <Project Path="HackerNewsGateway.Infrastructure/HackerNewsGateway.Infrastructure.csproj" />
+  <Project Path="HackerNewsGateway.Tests/HackerNewsGateway.Tests.csproj" />
   <Project Path="HackerNewsGatewayApi/HackerNewsGatewayApi.csproj" />
 </Solution>
