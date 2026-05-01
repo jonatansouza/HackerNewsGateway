@@ -1,9 +1,11 @@
+using HackerNewsGateway.Domain.Interfaces;
 using HackerNewsGateway.Domain.Options;
 using HackerNewsGateway.Infrastructure.Http;
-using HackerNewsGatewayApi.Cache;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace HackerNewsGatewayApi.Workers;
+namespace HackerNewsGateway.Infrastructure.Workers;
 
 public sealed class StorySyncWorker(
     HackerNewsClient hackerNewsClient,

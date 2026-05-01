@@ -1,6 +1,6 @@
 using HackerNewsGateway.Domain.Entities;
 
-namespace HackerNewsGatewayApi.Cache;
+namespace HackerNewsGateway.Domain.Interfaces;
 
 public interface IStoryCache
 {

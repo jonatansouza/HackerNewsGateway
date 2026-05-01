@@ -1,6 +1,7 @@
 using HackerNewsGateway.Domain.Entities;
+using HackerNewsGateway.Domain.Interfaces;
 using HackerNewsGateway.Domain.Options;
-using HackerNewsGatewayApi.Cache;
+using HackerNewsGateway.Infrastructure.Cache;
 using HackerNewsGatewayApi.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -11,7 +12,7 @@ namespace HackerNewsGateway.Tests;
 public class StoriesControllerTests
 {
     private static readonly IOptions<HackerNewsOptions> DefaultOptions =
-        Microsoft.Extensions.Options.Options.Create(new HackerNewsOptions());
+        Options.Create(new HackerNewsOptions());
 
     private static Story MakeStory(int score) =>
         new("Title", "http://uri", "user", DateTimeOffset.UtcNow, score, 0);
@@ -50,7 +51,7 @@ public class StoriesControllerTests
     [Fact]
     public void Get_NExceedsCustomMax_ReturnsBadRequest()
     {
-        var options = Microsoft.Extensions.Options.Options.Create(new HackerNewsOptions { MaxStories = 10 });
+        var options = Options.Create(new HackerNewsOptions { MaxStories = 10 });
         var result = CreateController(new StoryCache(), options).Get(11);
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
@@ -76,9 +77,7 @@ public class StoriesControllerTests
     {
         var cache = new StoryCache();
         cache.Replace([MakeStory(100), MakeStory(200), MakeStory(300)]);
-
         var result = CreateController(cache).Get(2);
-
         Assert.IsType<OkObjectResult>(result.Result);
     }
 
@@ -87,9 +86,7 @@ public class StoriesControllerTests
     {
         var cache = new StoryCache();
         cache.Replace([MakeStory(100), MakeStory(200), MakeStory(300)]);
-
         var result = CreateController(cache).Get(2);
-
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var stories = Assert.IsAssignableFrom<IEnumerable<Story>>(ok.Value);
         Assert.Equal(2, stories.Count());

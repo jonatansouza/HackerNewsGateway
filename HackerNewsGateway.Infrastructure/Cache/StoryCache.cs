@@ -1,7 +1,8 @@
 using System.Collections.Immutable;
 using HackerNewsGateway.Domain.Entities;
+using HackerNewsGateway.Domain.Interfaces;
 
-namespace HackerNewsGatewayApi.Cache;
+namespace HackerNewsGateway.Infrastructure.Cache;
 
 public sealed class StoryCache : IStoryCache
 {

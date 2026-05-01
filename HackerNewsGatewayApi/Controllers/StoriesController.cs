@@ -1,7 +1,7 @@
 using HackerNewsGateway.Domain.Entities;
+using HackerNewsGateway.Domain.Interfaces;
 using HackerNewsGateway.Domain.Options;
 using HackerNewsGateway.Domain.ValueObjects;
-using HackerNewsGatewayApi.Cache;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 

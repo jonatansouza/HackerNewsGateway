@@ -1,5 +1,5 @@
 using HackerNewsGateway.Domain.Entities;
-using HackerNewsGatewayApi.Cache;
+using HackerNewsGateway.Infrastructure.Cache;
 
 namespace HackerNewsGateway.Tests;
 
