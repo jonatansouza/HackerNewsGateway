@@ -1,21 +1,19 @@
+using HackerNewsGateway.Domain.Options;
 using HackerNewsGateway.Infrastructure.Http;
 using HackerNewsGatewayApi.Cache;
+using Microsoft.Extensions.Options;
 
 namespace HackerNewsGatewayApi.Workers;
 
 public sealed class StorySyncWorker(
     HackerNewsClient hackerNewsClient,
     IStoryCache cache,
-    IConfiguration configuration,
+    IOptions<HackerNewsOptions> options,
     ILogger<StorySyncWorker> logger) : BackgroundService
 {
-    private readonly SemaphoreSlim _semaphore = new(20, 20);
-
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var interval = TimeSpan.FromMinutes(
-            configuration.GetValue<int>("HackerNews:SyncIntervalMinutes", 5));
-
+        var interval = TimeSpan.FromMinutes(options.Value.SyncIntervalMinutes);
         using var timer = new PeriodicTimer(interval);
 
         do
@@ -32,17 +30,18 @@ public sealed class StorySyncWorker(
             logger.LogInformation("Starting story sync.");
 
             var ids = await hackerNewsClient.GetBestStoryIdsAsync(ct);
+            var semaphore = new SemaphoreSlim(options.Value.MaxParallelRequests, options.Value.MaxParallelRequests);
 
             var tasks = ids.Select(async id =>
             {
-                await _semaphore.WaitAsync(ct);
+                await semaphore.WaitAsync(ct);
                 try
                 {
                     return await hackerNewsClient.GetStoryAsync(id, ct);
                 }
                 finally
                 {
-                    _semaphore.Release();
+                    semaphore.Release();
                 }
             });
 
