@@ -11,7 +11,7 @@ cd HackerNewsGatewayApi
 dotnet run
 ```
 
-The API will be available at `https://localhost:7xxx` or `http://localhost:5xxx` (see console output).
+The API will be available at `https://localhost:7166` or `http://localhost:5294`.
 
 ## Endpoint
 
@@ -23,7 +23,7 @@ Returns the top `n` stories sorted by score descending. Maximum `n` is 100 (conf
 
 **Example:**
 ```bash
-curl https://localhost:7222/stories/5
+curl https://localhost:7166/stories/5
 ```
 
 **Response:**
@@ -65,14 +65,14 @@ StoriesController
 ## Configuration
 
 `appsettings.json`:
-```json
+```jsonc
 {
   "HackerNews": {
-    "BaseUrl": "https://hacker-news.firebaseio.com",
-    "SyncIntervalMinutes": 5,
-    "TimeoutSeconds": 10,
-    "SyncBatchSize": 20,
-    "MaxStories": 100
+    "BaseUrl": "https://hacker-news.firebaseio.com", // base URL of the Hacker News Firebase API
+    "SyncIntervalMinutes": 5,                        // how often the background worker refreshes the story cache
+    "TimeoutSeconds": 10,                            // per-request HTTP timeout when calling the HN API
+    "SyncBatchSize": 20,                             // number of story IDs fetched in parallel per batch
+    "MaxStories": 100                                // upper bound on n accepted by GET /stories/{n}
   }
 }
 ```
@@ -84,71 +84,71 @@ StoriesController
 The current implementation co-hosts the worker and the API in the same process for simplicity. In a production environment with real scalability requirements, these concerns should be fully separated. Below is the target architecture.
 
 ```mermaid
-flowchart TD
-    HN["🌐 HackerNews API\n(external)"]
+flowchart LR
+    HN["HackerNews API (external)"]
 
-    subgraph k8s["Kubernetes Cluster"]
+    subgraph ns["Kubernetes Namespace"]
 
-        subgraph worker["Worker Deployment — 1 replica"]
-            W["StorySyncWorker\nPeriodicTimer"]
-            LOCK["🔒 Distributed Lock\nRedis SETNX"]
-            W -->|"1. acquire lock\n(prevent concurrent runs)"| LOCK
-            W -->|"2. GET /beststories.json"| HN
-            W -->|"3. GET /item/id\nin batches of N"| HN
+        subgraph worker["Workload — Worker (1 replica)"]
+            W["StorySyncWorker"]
+            FETCH["Fetch IDs + Stories in batches"]
+            SCHED[/"⏱ runs every 5 min"/]
+            SCHED -. triggers .-> W
         end
 
-        subgraph store["Shared Store"]
-            REDIS[("Redis\nsorted stories + TTL")]
-            PUBSUB["📢 Pub/Sub Channel\nstories:updated"]
+        subgraph store["Redis"]
+            REDIS[("Sorted Stories + TTL")]
         end
 
-        subgraph api["API Deployment — N replicas"]
-            A1["Pod 1\nIn-Memory Cache"]
-            A2["Pod 2\nIn-Memory Cache"]
-            AN["Pod N\nIn-Memory Cache"]
+        subgraph api["Workload — API (scalable)"]
+            A1["Pod 1"]
+            A2["Pod 2"]
+            AN["Pod N"]
         end
+
+        LB["Load Balancer"]
 
     end
 
-    CLIENT["👤 Client"]
+    C1["Client 1"]
+    C2["Client 2"]
+    CN["Client N"]
 
-    W -->|"4. atomic REPLACE\n+ set TTL"| REDIS
-    W -->|"5. publish event"| PUBSUB
+    W --> FETCH
+    FETCH -->|"GET /beststories + /item/id"| HN
 
-    PUBSUB -.->|"invalidation signal\n→ refresh local cache"| A1
-    PUBSUB -.->|"invalidation signal\n→ refresh local cache"| A2
-    PUBSUB -.->|"invalidation signal\n→ refresh local cache"| AN
+    W -->|"atomic REPLACE + TTL"| REDIS
 
-    REDIS -->|"load on startup\n(before readiness probe passes)"| A1
-    REDIS -->|"load on startup\n(before readiness probe passes)"| A2
-    REDIS -->|"load on startup\n(before readiness probe passes)"| AN
+    C1 -->|"GET /stories/n"| LB
+    C2 -->|"GET /stories/n"| LB
+    CN -->|"GET /stories/n"| LB
 
-    CLIENT -->|"GET /stories/n\nserved from memory O(1)"| A1
-    CLIENT -->|"GET /stories/n\nserved from memory O(1)"| A2
-    CLIENT -->|"GET /stories/n\nserved from memory O(1)"| AN
+    LB --> A1
+    LB --> A2
+    LB --> AN
+
+    A1 -->|"read"| REDIS
+    A2 -->|"read"| REDIS
+    AN -->|"read"| REDIS
 ```
 
 ### Flow Explained
 
 | Step | Component | What happens |
 |---|---|---|
-| 1 | Worker | Acquires a distributed lock (Redis SETNX) — guarantees only one worker runs at a time even during rolling deploys |
-| 2–3 | Worker → HN API | Fetches story IDs, then fetches details in configurable batches — no request flood |
-| 4 | Worker → Redis | Atomically replaces the sorted story list with a TTL — stale detection built-in |
-| 5 | Worker → Pub/Sub | Publishes an invalidation event so API pods refresh immediately, not on polling interval |
-| Startup | API Pod | Loads Redis into local `ImmutableList` before the Kubernetes readiness probe passes — no 503 on cold start |
-| Request | API Pod | Serves entirely from local memory — zero network I/O on the hot path |
-| Fallback | API Pod | If Redis is unavailable, continues serving the last known in-memory state |
+| 1 | Worker → HN API | Fetches best story IDs, then fetches each story detail in configurable batches |
+| 2 | Worker → Redis | Atomically replaces the sorted story list with a TTL — stale detection built-in |
+| Request | API Pod | Reads directly from Redis — no local cache needed given Redis latency is <1ms inside the cluster |
+| Fallback | API Pod | If Redis is unavailable, returns 503 — no stale data served |
+
+> **Optional enhancement:** if read latency ever becomes a concern (e.g. Redis outside the cluster), add a local `ImmutableList` cache per pod refreshed via Redis Pub/Sub invalidation — worker publishes an event after step 3, pods reload on signal instead of polling.
 
 ### What This Implementation Is Missing vs. the Ideal Flow
 
 | Gap | Impact | Resolution |
 |---|---|---|
 | Worker co-hosted with API | Cannot scale API independently; worker restarts with every deploy | Separate Kubernetes Deployments |
-| No shared store | In-memory cache is not shared — each API pod would have its own state | Redis as shared store |
-| No distributed lock | Two workers could run simultaneously during a rolling deploy | Redis SETNX or Redlock |
-| Polling-based refresh | API refreshes on a fixed interval even when nothing changed | Pub/Sub invalidation from worker |
-| No readiness probe integration | First requests on a new pod may return 503 | Block readiness until cache is loaded from Redis |
+| No shared store | Each API pod would have its own in-memory state | Redis as shared store |
 | No TTL on stored data | API cannot detect if the worker has been silent for too long | Set TTL on Redis key; return `stale` header if expired |
 | No Polly retry/circuit breaker | Transient HN API errors abort the entire sync batch | Polly with exponential backoff per item |
 
@@ -175,8 +175,7 @@ The in-memory cache is not shared across multiple instances. Horizontal scaling 
 ## Enhancements Given More Time
 
 - Redis as shared store with atomic replace + TTL
-- Pub/Sub cache invalidation (worker → API pods)
-- Distributed lock (Redis SETNX) on worker
+- Pub/Sub cache invalidation (worker → API pods) — if local in-memory cache is added per pod
 - Kubernetes readiness probe wired to cache warm-up
 - Polly retry + circuit breaker on `HackerNewsClient`
 - Rate limiting on the gateway endpoint
